@@ -2,17 +2,17 @@ name: backend-cd
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 concurrency:
-  group: deploy-production
+  group: deploy-${{ github.ref_name }}-backend
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     steps:
       - name: Deploy full stack over SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -27,17 +27,23 @@ jobs:
             ROOT_DIR="/opt/ego"
             FRONT_DIR="$ROOT_DIR/ida-frontend"
             BACK_DIR="$ROOT_DIR/ida-backend"
+            BRANCH="${{ github.ref_name }}"
+            if [ "$BRANCH" = "develop" ]; then
+              COMPOSE_FILE="$FRONT_DIR/docker-compose.staging.yml"
+            else
+              COMPOSE_FILE="$FRONT_DIR/docker-compose.dev.yml"
+            fi
 
             test -d "$FRONT_DIR"
             test -d "$BACK_DIR"
 
             git -C "$FRONT_DIR" fetch origin
-            git -C "$FRONT_DIR" checkout main
-            git -C "$FRONT_DIR" pull --ff-only origin main
+            git -C "$FRONT_DIR" checkout "$BRANCH"
+            git -C "$FRONT_DIR" pull --ff-only origin "$BRANCH"
 
             git -C "$BACK_DIR" fetch origin
-            git -C "$BACK_DIR" checkout main
-            git -C "$BACK_DIR" pull --ff-only origin main
+            git -C "$BACK_DIR" checkout "$BRANCH"
+            git -C "$BACK_DIR" pull --ff-only origin "$BRANCH"
 
-            docker compose -f "$FRONT_DIR/docker-compose.dev.yml" up -d --build
+            docker compose -f "$COMPOSE_FILE" up -d --build
             docker image prune -f
