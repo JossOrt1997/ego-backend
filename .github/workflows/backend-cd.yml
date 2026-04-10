@@ -1,0 +1,43 @@
+name: backend-cd
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy full stack over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            ROOT_DIR="/opt/ego"
+            FRONT_DIR="$ROOT_DIR/ida-frontend"
+            BACK_DIR="$ROOT_DIR/ida-backend"
+
+            test -d "$FRONT_DIR"
+            test -d "$BACK_DIR"
+
+            git -C "$FRONT_DIR" fetch origin
+            git -C "$FRONT_DIR" checkout main
+            git -C "$FRONT_DIR" pull --ff-only origin main
+
+            git -C "$BACK_DIR" fetch origin
+            git -C "$BACK_DIR" checkout main
+            git -C "$BACK_DIR" pull --ff-only origin main
+
+            docker compose -f "$FRONT_DIR/docker-compose.dev.yml" up -d --build
+            docker image prune -f
